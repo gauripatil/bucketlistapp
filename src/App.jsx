@@ -1,122 +1,199 @@
-import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import './App.css'
+import { useState, useEffect } from "react";
+import {
+  Authenticator,
+  Button,
+  Text,
+  TextField,
+  Heading,
+  Flex,
+  View,
+  Image,
+  Grid,
+  Divider,
+} from "@aws-amplify/ui-react";
+import { Amplify } from "aws-amplify";
+import "@aws-amplify/ui-react/styles.css";
+import { getUrl } from "aws-amplify/storage";
+import { uploadData } from "aws-amplify/storage";
+import { generateClient } from "aws-amplify/data";
+import outputs from "../amplify_outputs.json";
+/**
+ * @type {import('aws-amplify/data').Client<import('../amplify/data/resource').Schema>}
+ */
 
-function App() {
-  const [count, setCount] = useState(0)
+Amplify.configure(outputs);
+const client = generateClient({
+  authMode: "userPool",
+});
+
+
+export default function App() {
+  const [items, setItems] = useState([]);
+
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+
+  async function fetchItems() {
+    const { data: items } = await client.models.BucketItem.list();
+    await Promise.all(
+      items.map(async (item) => {
+        if (item.image) {
+          const linkToStorageFile = await getUrl({
+            path: ({ identityId }) => `media/${identityId}/${item.image}`,
+          });
+          console.log(linkToStorageFile.url);
+          item.image = linkToStorageFile.url;
+        }
+        return item;
+      })
+    );
+    console.log(items);
+    setItems(items);
+  }
+
+
+  async function createItem(event) {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    console.log(form.get("image").name);
+
+
+    const { data: newItem } = await client.models.BucketItem.create({
+      title: form.get("title"),
+      description: form.get("description"),
+      image: form.get("image").name,
+    });
+
+
+    console.log(newItem);
+    if (newItem.image)
+      await uploadData({
+        path: ({ identityId }) => `media/${identityId}/${newItem.image}`,
+        data: form.get("image"),
+      }).result;
+
+
+    fetchItems();
+    event.target.reset();
+  }
+
+
+  async function deleteItem({ id }) {
+    const toBeDeletedItem = {
+      id: id,
+    };
+
+
+    const { data: deletedItem } = await client.models.BucketItem.delete(
+      toBeDeletedItem
+    );
+    console.log(deletedItem);
+
+
+    fetchItems();
+  }
+
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+    <Authenticator>
+      {({ signOut }) => (
+        <Flex
+          className="App"
+          justifyContent="center"
+          alignItems="center"
+          direction="column"
+          width="70%"
+          margin="0 auto"
         >
-          Count is {count}
-        </button>
-      </section>
+          <Heading level={1}>My Bucket List</Heading>
+          <View as="form" margin="3rem 0" onSubmit={createItem}>
+            <Flex
+              direction="column"
+              justifyContent="center"
+              gap="2rem"
+              padding="2rem"
+            >
+              <TextField
+                name="title"
+                placeholder="Bucket List Item"
+                label="Bucket List Item"
+                labelHidden
+                variation="quiet"
+                required
+              />
+              <TextField
+                name="description"
+                placeholder="Description"
+                label="Description"
+                labelHidden
+                variation="quiet"
+                required
+              />
+              <View
+                name="image"
+                as="input"
+                type="file"
+                alignSelf={"end"}
+                accept="image/png, image/jpeg"
+              />
 
-      <div className="ticks"></div>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
+              <Button type="submit" variation="primary">
+                Add to Bucket List
+              </Button>
+            </Flex>
+          </View>
+          <Divider />
+          <Heading level={2}>My Bucket List Items</Heading>
+          <Grid
+            margin="3rem 0"
+            autoFlow="column"
+            justifyContent="center"
+            gap="2rem"
+            alignContent="center"
+          >
+            {items.map((item) => (
+              <Flex
+                key={item.id || item.title}
+                direction="column"
+                justifyContent="center"
+                alignItems="center"
+                gap="2rem"
+                border="1px solid #ccc"
+                padding="2rem"
+                borderRadius="5%"
+                className="box"
+              >
+                <View>
+                  <Heading level="3">{item.title}</Heading>
+                </View>
+                <Text fontStyle="italic">{item.description}</Text>
+                {item.image && (
+                  <Image
+                    src={item.image}
+                    alt={`Visual for ${item.title}`}
+                    style={{ width: 400 }}
+                  />
+                )}
+                <Button
+                  variation="destructive"
+                  onClick={() => deleteItem(item)}
                 >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+                  Delete Item
+                </Button>
+              </Flex>
+            ))}
+          </Grid>
+          <Button onClick={signOut}>Sign Out</Button>
+        </Flex>
+      )}
+    </Authenticator>
+  );
 }
-
-export default App
